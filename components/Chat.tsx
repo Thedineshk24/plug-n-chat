@@ -1,181 +1,132 @@
-import React, {useEffect, useState} from "react";
-import {GoogleGenerativeAI} from "@google/generative-ai";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-}
+import React, { useEffect, useRef } from "react";
+import ReactMarkDown from "react-markdown";
+import * as lucid from "lucide-react";
+import { useTheme } from "@/hooks/useTheme";
+import usePopupDimensions from "@/hooks/usePopupDimensions";
+import useChatSession from "@/hooks/useChatSession";
+import useWebsiteContent from "@/hooks/useWebsiteContent";
+import useHandleMessages from "@/hooks/useHandleMessages";
 
 export const ChatComponent: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [websiteContent, setWebsiteContent] = useState<string | null>(null);
-  const [chatSession, setChatSession] = useState<any>(null);
-  const [loading, setLoading] = useState(false); // For loading state
-  const [test, setTest] = useState("");
+  usePopupDimensions();
+  const { theme, toggleTheme } = useTheme();
+  const chatSession = useChatSession();
+  const { messages, input, loading, handleInputChange, handleSubmit } =
+    useHandleMessages(
+      chatSession,
+      useWebsiteContent((newMessages) => newMessages)
+    );
 
-  // Initialize chat session once on component mount
-  useEffect(() => {
-    const initializeChatSession = async () => {
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-pro",
-      });
-      const generationConfig = {
-        temperature: 1,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 8192,
-        responseMimeType: "text/plain",
-      };
-      const session = model.startChat({
-        generationConfig,
-        history: [],
-      });
-      setChatSession(session);
-    };
+  // Ref for the messages container
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-    if (!chatSession) {
-      initializeChatSession();
+  // Scroll to bottom function
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [chatSession]);
-
-  // Fetch website content from the background script
-  useEffect(() => {
-    const fetchContentFromTab = async () => {
-      try {
-        setLoading(true); // Set loading state to true when fetching content
-        await chrome.runtime.sendMessage(
-          {action: "fetchContent"},
-          (response) => {
-            console.log("Content fetched from the website:", response);
-            setTest(JSON.stringify(response));
-            if (response?.content) {
-              setWebsiteContent(JSON.stringify(response.content));
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  role: "assistant",
-                  content: `Here is the website content:\n\n${response.content}`,
-                },
-              ]);
-            } else {
-              console.error("No content fetched from the website.");
-            }
-            setLoading(false); // Reset loading state after response
-          }
-        );
-      } catch (error) {
-        console.error("Error fetching website details:", error);
-        setLoading(false); // Reset loading state in case of error
-      }
-    };
-
-    fetchContentFromTab();
-  }, []);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInput(e.target.value);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || !chatSession) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-
-    try {
-      const prompt = `Context: ${
-        websiteContent || "No website content available."
-      }\n\nUser Question: ${input}`;
-      setLoading(true); // Set loading state before AI response
-      const result = await chatSession.sendMessage(prompt);
-      const response = await result.response.text();
-
-      if (response) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "assistant",
-            content: response,
-          },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "assistant",
-            content: "Sorry, I couldn't find an answer for your question.",
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error("Error getting AI response:", error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: "assistant",
-          content: "Sorry, there was an error fetching the response.",
-        },
-      ]);
-    }
-    setLoading(false); // Reset loading state after AI response
-    setInput("");
-  };
+  // Scroll to bottom whenever messages or loading state changes
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
 
   return (
-    <div className="w-96 h-[28rem] flex flex-col bg-white shadow-lg p-4 rounded-lg">
-      <div className="flex-1 overflow-y-auto border rounded-md p-2 space-y-2 bg-gray-50">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`p-2 rounded-md ${
-              message.role === "user"
-                ? "bg-blue-100 text-right"
-                : "bg-gray-200 text-left"
-            }`}
-          >
-            {message.content}
-          </div>
-        ))}
-        {loading && (
-          <div className="text-center text-sm text-gray-500">Loading...</div>
-        )}
-        {
-          // show content from the website if it exists
-          test && (
-            <div className="p-2 rounded-md bg-gray-200 text-left">
-              {test}
-            </div>
+    <div
+      className={`w-96 h-[600px] flex flex-col ${
+        theme === "dark" ? "bg-gray-900 text-white" : "bg-white text-gray-900"
+      }`}
+    >
+      <div
+        className={`${
+          theme === "dark" ? "bg-purple-700" : "bg-purple-500"
+        } text-white p-3 font-semibold text-sm flex justify-between items-center`}
+      >
+        <span>Chat Assistant</span>
+        <button
+          onClick={toggleTheme}
+          className="p-1 rounded-full hover:bg-purple-600 transition-colors hover:opacity-80"
+        >
+          {theme === "dark" ? (
+            <lucid.Sun size={16} />
+          ) : (
+            <lucid.Moon size={16} color="black" />
+          )}
+        </button>
+      </div>
+      <div
+        className={`flex-1 overflow-y-auto p-4 space-y-4 ${
+          theme === "dark" ? "bg-gray-800" : "bg-gray-50"
+        }`}
+      >
+        {messages
+          .filter(
+            (message) =>
+              !(
+                message.role === "assistant" &&
+                message.content.startsWith("Here is the website content:")
+              )
           )
-        }
+          .map((message) => (
+            <div
+              key={message.id}
+              className={`p-2 rounded-md ${
+                message.role === "user"
+                  ? theme === "dark"
+                    ? "bg-blue-700 text-right"
+                    : "bg-blue-100 text-right"
+                  : theme === "dark"
+                  ? "bg-gray-700 text-left"
+                  : "bg-gray-200 text-left"
+              }`}
+            >
+              <ReactMarkDown className="prose prose-sm max-w-none">
+                {message.content}
+              </ReactMarkDown>
+            </div>
+          ))}
+        {loading && (
+          <div
+            className={`p-2 text-center ${
+              theme === "dark" ? "text-gray-400" : "text-gray-500"
+            } animate-pulse`}
+          >
+            <lucid.SearchSlashIcon size={24} />
+          </div>
+        )}
+        {/* Placeholder div to ensure scroll to bottom */}
+        <div ref={messagesEndRef}></div>
       </div>
 
       <form
         onSubmit={handleSubmit}
-        className="flex items-center space-x-2 mt-3"
+        className={`flex items-center space-x-2 p-3 ${
+          theme === "dark"
+            ? "bg-gray-900 border-gray-700"
+            : "bg-white border-gray-200"
+        } border-t`}
       >
         <input
+          required
           type="text"
           value={input}
           onChange={handleInputChange}
-          placeholder="Type a message..."
-          className="flex-1 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Ask me anything..."
+          className={`flex-1 px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+            theme === "dark"
+              ? "bg-gray-800 text-white border-gray-700"
+              : "bg-white text-gray-900 border-gray-300"
+          }`}
         />
         <button
+          disabled={loading}
           type="submit"
-          className="px-3 py-1 text-sm bg-green-500 text-white rounded-md hover:bg-green-600"
+          className={`px-3 py-1 text-sm ${
+            theme === "dark"
+              ? "bg-purple-600 hover:bg-purple-700"
+              : "bg-purple-500 hover:bg-purple-600"
+          } text-white rounded-md transition-colors`}
         >
           Send
         </button>

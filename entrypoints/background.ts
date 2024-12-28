@@ -1,83 +1,50 @@
-export default defineBackground(() => {
-  // Listen for messages from popup
-  console.log("Background script initialized, waiting for message...");
+import { defineBackground } from "wxt/sandbox";
 
+let latestContent: { text: any; title: any; url: any; } | null = null;
+
+function main() {
+  console.log("Background script initialized, waiting for messages...");
+
+  // Listen for messages from the popup or content script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "fetchContent") {
-      console.log("Received 'fetchContent' action, querying active tab...");
+    console.log("Received message:", request);
 
-      chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        const activeTab = tabs[0];
+    if (request && request.content) {
+      // Safely destructure the content
+      const { text, title, url } = request.content;
 
-        if (activeTab?.id !== undefined) {
-          console.log("Active tab found, sending message to content script...");
-
-          chrome.tabs.sendMessage(
-            activeTab.id,
-            {action: "getPageContent"},
-            (response) => {
-              console.log("Received response from content script...");
-
-              if (response && response.content) {
-                console.log("Valid response, extracting content...");
-                const {text, title, url} = response.content;
-                sendResponse({text, title, url});
-              } else {
-                console.log("No content received from content script.");
-                sendResponse({
-                  error: "No content received from content script.",
-                });
-              }
-            }
-          );
-        }
+      console.log("Received content from content script:", {
+        text,
+        title,
+        url,
       });
 
-      return true; // Keeps the message channel open for async response
+      // Store the latest content
+      latestContent = { text, title, url };
+
+      // Respond with a success message
+      sendResponse({
+        status: "Content received successfully",
+        text,
+        title,
+        url,
+      });
+      return true;
+    } else if (request.action === "getContent") {
+      // Respond with the latest content
+      sendResponse(latestContent);
+      return true;
+    } else {
+      // Respond with an error message
+      sendResponse({
+        status: "No valid content received",
+      });
     }
+
+    // Return true to indicate the response will be sent asynchronously (if needed)
+    return true;
   });
-});
+}
 
-// TODO: temporary commented 
-
-// export default defineBackground(() => {
-//   // background.js - Listens for messages from the popup (React component)
-//   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-//     if (request.action === "fetchContent") {
-//       // Query the active tab and send the message to the content script
-//       chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-//         const activeTab = tabs[0];
-//         if (activeTab) {
-//           if (activeTab.id !== undefined) {
-//             // Send message to content script to get page content
-//             chrome.tabs.sendMessage(
-//               activeTab.id,
-//               {action: "getPageContent"},
-//               (response) => {
-//                 // Check if the response from the content script is valid
-//                 if (response && response.content) {
-//                   // Extract the content from the response
-//                   const {text, title, url} = response.content;
-
-//                   // Send back the extracted content to the popup or wherever needed
-//                   sendResponse({
-//                     text: text,
-//                     title: title,
-//                     url: url,
-//                   });
-//                 } else {
-//                   sendResponse({
-//                     error: "No content received from content script.",
-//                   });
-//                 }
-//               }
-//             );
-//           }
-//         }
-//       });
-//       return true; // Indicates that the response will be sent asynchronously
-//     }
-//   });
-// });
-
-
+// Export the background script using `defineBackground`
+export default defineBackground(main);
